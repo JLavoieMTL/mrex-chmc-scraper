@@ -25,89 +25,96 @@ export class CHMCParser {
     return this.primaryRentalDetail;
   }
 
+  async searchByPostalCode(postalCode: string) {
+    const res = await axios.post(
+      'https://www03.cmhc-schl.gc.ca/hmip-pimh/en/Main/Search',
+      {
+        q: postalCode,
+        l: 50,
+      },
+    );
+    const postalResult = res.data;
+
+    if (postalResult.length == 0 || postalResult[0]['Type'] != 'PostalCode')
+      return null
+    
+    const geography = postalResult[0]['RelatedResults']
+    const metropolitan = geography.find((g:any) => g.Subtype == 'MetropolitanMajorArea')
+    const neighbourhood = geography.find((g:any) => g.Subtype == 'Neighbourhood')
+    const census = geography.find((g:any) => g.Subtype == 'CensusTract')
+    
+    if (metropolitan == undefined || neighbourhood == undefined || census == undefined)
+      return null
+
+    const geographyId = metropolitan.OID + neighbourhood.OID + census.OID
+
+
+    this.primaryRentalDetail = await this.getDetailsPrimaryRentalResult(
+      geographyId,
+    );
+
+    return this.primaryRentalDetail;
+
+  }
+
   async getReport() {
+	  //const result = {units: {}, vacancy: {}, rents: {}, availability: {}} 
+	  const result:any = {units: {}, vacancy: {}, rents: {}, availability: {}} 
+
     const $ = cheerio.load(this.primaryRentalDetail);
-    let headers: any = [];
-    let headerIndex = -1;
-    $(`.profileDetailItems thead tr th`).each((i: any, elem: any) => {
-      const header = $(elem).text();
-      if (header) {
-        headers[headerIndex].push(header);
-      } else {
-        headerIndex += 1;
-        headers[headerIndex] = [];
-      }
-    });
 
-    const tableNameList = ['units', 'vacancy', 'rents', 'availability'];
-    let tableList: any = {};
-    $(`.profileDetailItems tbody`).each((tBodyIndex: any, tBodyElem: any) => {
-      $(tBodyElem, 'tr').each((tRowIndex: any, tRowElem: any) => {
-        const tableData: any = {};
-        const tHead: any = [];
+    const tableIndex:any = {0: "units", 1: "vacancy", 2: "rents", 3: "availability"}
+    $(".profileDetailTable").each((i: any, tBodyElem: any) => {
+      const tableName = tableIndex[i]
+      const data = $('td', tBodyElem)
+      let dataIndex = 0
 
-        $('th', tRowElem).each((tHeadIndex: any, tHeadElem: any) =>
-          tHead.push($(tHeadElem).text()),
-        );
-        const tHeadLength = tHead.length;
-        const tDataList = $('td', tRowElem);
-        const tDataListLength = tDataList.length;
+      // Process Row Headers (Bachelor, 1 Bedroom, 2 Bedroom, etc...)
+      $('th[scope="row"]', tBodyElem).each((headerIndex: any, headerElem: any) => {
+        const header = $(headerElem).text()
 
-        tDataList.each((tDataIndex: any, tDataElem: any) => {
-          const hasOnlyValue =
-            tDataListLength === tHeadLength * 3 ? true : false;
-          const hasValueAndAccuracy =
-            tDataListLength === tHeadLength * 6 ? true : false;
+        if (header) {
 
-          let tData = $(tDataElem).text();
-          const header = headers[tBodyIndex];
-          const headerLength = header.length;
-          let topHeaderAttr = hasValueAndAccuracy
-            ? header[Math.floor((tDataIndex % (headerLength * 2)) / 2)]
-            : header[tDataIndex % headerLength];
-          const LeftHeaderAttr = hasValueAndAccuracy
-            ? tHead[Math.floor(tDataIndex / (headerLength * 2))]
-            : tHead[Math.floor(tDataIndex / headerLength)];
+          // Process Dates
+          $('thead th', tBodyElem).each((dateIndex: any, dateElem: any) =>{
+            const date = $(dateElem).text()
 
-          topHeaderAttr = `20${topHeaderAttr.split('-')[1]}`;
+            if (date) {
+              const colspan = dateElem.attribs.colspan
+              const year = parseInt('20' + date.split('-')[1])
 
-          if (!tableData.hasOwnProperty(topHeaderAttr)) {
-            tableData[topHeaderAttr] = {};
-          }
+              if (result[tableName][year] == undefined)
+                result[tableName][year] = {}
+              
+              const value = $(data[dataIndex++]).text()
 
-          if (hasOnlyValue) {
-            tableData[topHeaderAttr][this.getBedRoom(LeftHeaderAttr)] = {
-              value: isNaN(parseFloat(tData)) ? null : parseFloat(tData),
-            };
-          } else if (hasValueAndAccuracy) {
-            if (tDataIndex % 2 === 0) {
-              tableData[topHeaderAttr][this.getBedRoom(LeftHeaderAttr)] = {
-                ...tableData[topHeaderAttr][this.getBedRoom(LeftHeaderAttr)],
-                value: isNaN(parseFloat(tData)) ? null : parseFloat(tData),
-              };
-            } else {
-
-              tableData[topHeaderAttr][this.getBedRoom(LeftHeaderAttr)] = {
-                ...tableData[topHeaderAttr][this.getBedRoom(LeftHeaderAttr)],
-                accuracy: ['a','b','c','d'].includes(tData.trim()) ? tData.trim() : null,
-              };
+              if (colspan == 2) {
+                const accuracy = $(data[dataIndex++]).text()
+                result[tableName][year][header] = {value, accuracy}
+              } else {
+                result[tableName][year][header] = {value}
+              }
             }
-          }
-        });
 
-        tableList[tableNameList[tBodyIndex]] = tableData;
+          });
+        }
       });
     });
 
-    return tableList;
+    return result;
   }
 
   async getDetailsPrimaryRentalResult(geographyId: string) {
     const res = await axios.post(
       'https://www03.cmhc-schl.gc.ca/hmip-pimh/en/Profile/DetailsPrimaryRentalMarket',
       {
-        geographyId,
-        t: 7,
+        fixCacheBug: 1
+      },
+      {
+        params: {
+          geographyId,
+          t: 7,
+        }
       },
     );
 
