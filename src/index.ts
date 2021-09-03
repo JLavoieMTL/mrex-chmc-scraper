@@ -1,12 +1,11 @@
-import { CHMCParser } from './utils/chmc-gateway';
+import { CHMCParser } from './utils/chmc-gateway'
 
-const parser = new CHMCParser();
+const parser = new CHMCParser()
 
 parser.searchByPostalCode('H1C 1R9', false).then(async res => {
-  console.log(JSON.stringify(await parser.getReport(), null, 4));
-});
+    console.log(JSON.stringify(await parser.getReport(), null, 4))
+})
 
 parser.searchByAddress('levi').then(async res => {
-  console.log(JSON.stringify(await parser.getReport(), null, 4));
-  //const { units, vacancy, rents, availability } = await parser.getReport();
-});
+    console.log(JSON.stringify(await parser.getReport(), null, 4))
+})
