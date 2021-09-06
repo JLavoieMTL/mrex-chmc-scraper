@@ -1,5 +1,6 @@
 import axios from 'axios'
 import cheerio from 'cheerio'
+import querystring from 'querystring'
 
 import { Address } from './address'
 
@@ -34,7 +35,7 @@ export class CHMCParser {
         return this.primaryRentalDetail
     }
 
-    async searchByPostalCode(postalCode: string, censusTract = true) {
+    async searchByPostalCode(postalCode: string, level:string = 'CensusTract') {
         const res = await axios.post(
             'https://www03.cmhc-schl.gc.ca/hmip-pimh/en/Main/Search',
             {
@@ -47,30 +48,50 @@ export class CHMCParser {
         if (postalResult.length == 0 || postalResult[0]['Type'] != 'PostalCode')
             return null
 
-        const geography = postalResult[0]['RelatedResults']
-        const metropolitan = geography.find(
-            (g: any) => g.Subtype == 'MetropolitanMajorArea',
-        )
-        const neighbourhood = geography.find(
-            (g: any) => g.Subtype == 'Neighbourhood',
-        )
-        const census = geography.find((g: any) => g.Subtype == 'CensusTract')
+        const relatedResults = postalResult[0]['RelatedResults']
 
-        if (
-            metropolitan == undefined ||
-            neighbourhood == undefined ||
-            census == undefined
-        )
-            return null
+        let postalRequest:any = {}
 
-        let geographyId = metropolitan.OID + neighbourhood.OID
+        for (let i =0; i < relatedResults.length; i++) {
+            let geo = relatedResults[i]
+            postalRequest[`results[${i}].Name`] = geo.Name ? geo.Name : ""
+            postalRequest[`results[${i}].NormalizedName`] = geo.NormalizedName ? geo.NormalizedName : ""
+            postalRequest[`results[${i}].Type`] = geo.Type
+            postalRequest[`results[${i}].SubType`] = geo.Subtype
+            postalRequest[`results[${i}].OID`] = geo.OID
+        }
 
-        if (censusTract) geographyId += census.OID
+        const postalInfo = await axios.post("https://www03.cmhc-schl.gc.ca/hmip-pimh/en/Main/PostalCodeDetails",
+            querystring.stringify(postalRequest), {
+                headers: {
+                    "Content-Type": "application/x-www-form-urlencoded"
+                }
+            })
 
-        this.primaryRentalDetail = await this.getDetailsPrimaryRentalResult(
-            geographyId,
-            censusTract ? 7 : 6,
-        )
+        const $ = cheerio.load(postalInfo.data)
+
+        const geographyCodes:any = {
+            censustract: $('a[data-type="CensusTract"]'),
+            neighbourhood: $('a[data-type="Neighbourhood"]'),
+            surveyzone: $('a[data-type="SurveyZone"]'),
+            metropolitanmajorarea: $('a[data-type="MetropolitanMajorArea"]'),
+            province: $('a[data-type="Province"]')
+
+        }
+
+        const geographyId = geographyCodes[level].attr('data-id')
+
+
+	this.primaryRentalDetail = await this.getDetailsPrimaryRentalResult(
+	    geographyId,
+	    geographyCodes[level].attr('data-type-code'),
+	)
+
+	if (this.primaryRentalDetail != null) {
+		console.log(`Successfully retrived data for PostalCode: ${postalCode}, GeoId: ${geographyId}`)
+	} else {
+		console.log(`Failed to fetch data for PostalCode: ${postalCode}, GeoId: ${geographyId}`)
+	}
 
         return this.primaryRentalDetail
     }

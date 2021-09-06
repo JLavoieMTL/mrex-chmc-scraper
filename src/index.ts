@@ -2,7 +2,7 @@ import { CHMCParser } from './utils/chmc-gateway'
 
 const parser = new CHMCParser()
 
-parser.searchByPostalCode('H1C 1R9', false).then(async res => {
+parser.searchByPostalCode('H1C 1R9', 'censustract').then(async res => {
     console.log(JSON.stringify(await parser.getReport(), null, 4))
 })
 
