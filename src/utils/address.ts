@@ -3,7 +3,7 @@ export interface Address {
     NormalizedName?: string
     OID?: string
     RelatedResults?: any[]
-    Subtype?: string
+    Subtype: string
     Type?: string
     CensusSubdivision?: string
     NameEnglish?: string

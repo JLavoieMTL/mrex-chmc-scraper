@@ -5,7 +5,6 @@ import querystring from 'querystring'
 import { Address } from './address'
 
 export class CHMCParser {
-    addressResult: Address[] = []
     primaryRentalDetail: any
 
     async searchByAddress(address: string) {
@@ -16,20 +15,39 @@ export class CHMCParser {
                 l: 50,
             },
         )
-        this.addressResult = res.data
 
-        this.addressResult = this.addressResult.filter(
+        const addressResult: Address[] = res.data
+        if (addressResult.length == 0) return null
+
+        const otherPlaces = addressResult.filter(
             el => el.Type == 'PlaceName',
         )
 
-        if (this.addressResult.length == 0) return null
+        const portalLocations = addressResult.filter(
+            el => el.Type == 'Geography',
+        )
 
-        const results: any = this.addressResult[0].RelatedResults
-        const geographyId: any = results[results.length - 1].OID
+        let data = null
+        const levels = ["neighbourhood", "surveyzone", "censussubdivision", "metropolitanmajorarea", "province"]
+
+        for (let l of levels) {
+            for(let pl of portalLocations) {
+                if (pl.Subtype.toLowerCase() == l) {
+                    data = pl
+                    break
+                }
+            }
+            if (data != null) break
+        }
+
+        if (data == null) return null
+
+
+        const geographyId: any = data.OID
 
         this.primaryRentalDetail = await this.getDetailsPrimaryRentalResult(
             geographyId,
-            results[results.length - 1].Subtype == 'CensusTract' ? 7 : 6,
+            6 - levels.indexOf(data.Subtype.toLowerCase()),
         )
 
         return this.primaryRentalDetail
@@ -116,6 +134,9 @@ export class CHMCParser {
         }
 
         $('.profileDetailTable').each((i: any, tBodyElem: any) => {
+            // Ignore any other tables
+            if (i >= Object.keys(result).length) return 
+
             const tableName = tableIndex[i]
             const data = $('td', tBodyElem)
             let dataIndex = 0
